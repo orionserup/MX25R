@@ -13,6 +13,24 @@
 
 #include <string.h>
 
+/**
+ * @brief 
+ * 
+ * @param dev 
+ * @return true 
+ * @return false 
+ */
+static bool MX25RVerifyErase(const MX25R* const dev);
+
+/**
+ * @brief 
+ * 
+ * @param dev 
+ * @return true 
+ * @return false 
+ */
+static bool MX25RVerifyProgram(const MX25R* const dev);
+
 uint8_t MX25RWriteCommand(const MX25R *const dev, const MX25RCommand cmd, const uint8_t *const args, const uint8_t arg_size) {
 
     #ifdef DEBUG // we have to have a valid device and we can't have more than 5 args acoording to the datasheet
@@ -29,36 +47,39 @@ uint8_t MX25RWriteCommand(const MX25R *const dev, const MX25RCommand cmd, const 
 
 }
 
+#ifndef DEBUG
+MX25R* MX25RInit(MX25R *const dev, const MX25RHAL* const hal, const bool low_power) {
+#else
 MX25R* MX25RInit(MX25R *const dev, const MX25RHAL* const hal, const bool low_power, const uint8_t size_in_mb) {
-
-    #ifdef DEBUG // checking for error cases 
 
     if(hal == NULL || dev == NULL)
         return NULL;
 
     if(hal->select_chip == NULL || hal->spi_read == NULL || hal->spi_write == NULL)
         return NULL;
+        
+    dev->size_in_mb = size_in_mb;
 
-    #endif
+#endif
 
     dev->hal = *hal;
-    dev->size_in_mb = size_in_mb;
     dev->flags = (MX25RFlags){ .write_enabled = false , .reset_enabled = false };
 
-    const uint8_t status_config[] = {0x2, 0x0, low_power ? 0x0 : 0x02};
+    const uint8_t status_config[] = {0x0, 0x0, low_power ? 0x0 : 0x02};
     dev->hal.select_chip(true);
-    MX25RWriteCommand(dev, MX25R_WRITE_STAT_REG, status_config, 3);
+    uint8_t res = MX25RWriteCommand(dev, MX25R_WRITE_STAT_REG, status_config, 3);
     dev->hal.select_chip(false);
-
-    return dev;
+    
+    return res? dev: NULL;
 }
 
 void MX25RDeinit(MX25R* const dev) {
 
     MX25RDeepSleep(dev);
+
 }
 
-uint8_t MX25RRead(const MX25R* const dev, const uint32_t address, uint8_t *const output, const uint32_t size){
+uint8_t MX25RRead(const MX25R* const dev, const uint32_t address, uint8_t *const output, const uint32_t size) {
 
     #ifdef DEBUG
     // if the address if bigger than the flash itself or we want to read past the end or we dont have a valid
@@ -69,8 +90,8 @@ uint8_t MX25RRead(const MX25R* const dev, const uint32_t address, uint8_t *const
 
     dev->hal.select_chip(true);
 
-    uint8_t address_buffer[] = {(uint8_t)(address >> 16), (uint8_t)(address >> 8), address & 0xff};
-    uint8_t ret = MX25RWriteCommand(dev, MX25R_READ, address_buffer, 3);
+    uint8_t read_args[] = {(uint8_t)(address >> 16), (uint8_t)(address >> 8), address & 0xff};
+    uint8_t ret = MX25RWriteCommand(dev, MX25R_READ, read_args, 3);
     uint8_t out = ret == 0 ? 0 : (uint8_t)dev->hal.spi_read(output, size);
 
     dev->hal.select_chip(false);
@@ -78,7 +99,7 @@ uint8_t MX25RRead(const MX25R* const dev, const uint32_t address, uint8_t *const
     return ret ? (uint8_t)out : 0;
 }
 
-uint8_t MX25RReadStatus(const MX25R* const dev, MX25RStatus* const status) {
+uint8_t MX25RReadStatus(MX25R* const dev, MX25RStatus* const status) {
 
     #ifdef DEBUG
     if(dev == NULL || status == NULL)
@@ -101,7 +122,57 @@ uint8_t MX25RReadStatus(const MX25R* const dev, MX25RStatus* const status) {
     status->status_register_write_protected = raw_status & 0x80;
     status->quad_mode_enable = raw_status & 0x40;
 
+    dev->flags.write_enabled = status->write_enabled;
+
     return ret;
+}
+
+
+uint8_t MX25RFastRead(const MX25R* const dev, const uint32_t address, uint8_t* const output, const uint32_t size) {
+
+    #ifdef DEBUG
+    // if the address if bigger than the flash itself or we want to read past the end or we dont have a valid
+    const uint32_t max_address = (dev->size_in_mb << 20) - 1;
+    if(address > max_address || size > (max_addres - address) || output == NULL)
+        return 0;
+    #endif
+
+    dev->hal.select_chip(true);
+
+    uint8_t fast_read_args[] = {(uint8_t)(address >> 16), (uint8_t)(address >> 8), address & 0xff, 0};
+    uint8_t ret = MX25RWriteCommand(dev, MX25R_FAST_READ, fast_read_args, 4);
+    uint8_t out = ret == 0 ? 0 : (uint8_t)dev->hal.spi_read(output, size);
+
+    dev->hal.select_chip(false);
+
+    return ret ? (uint8_t)out : 0;
+
+}
+
+uint8_t MX25RReadSecurityReg(const MX25R* const dev, MX25RSecurityReg* const reg) {
+
+    #ifdef DEBUG
+    if(reg == NULL)
+        return 0;
+    #endif
+
+    uint8_t raw_reg = 0;
+    dev->hal.select_chip(true);
+    uint8_t ret = MX25RWriteCommand(dev, MX25R_READ_SEC_REG, NULL, 0);
+    if(ret)
+        dev->hal.spi_read(&raw_reg, 1);
+    dev->hal.select_chip(false);
+
+    reg->erase_failed = raw_reg
+
+    return ret;
+
+}
+
+uint8_t MX25RWriteSecurityReg(const MX25R* const dev, bool lockdown_otp_sector1) {
+
+
+
 }
 
 uint8_t MX25RPageProgram(const MX25R* const dev, const uint16_t page, const uint8_t *const data, const uint8_t size) {
@@ -176,7 +247,7 @@ uint8_t MX25REraseBlock(const MX25R* const dev, const uint8_t block) {
 
 }
 
-uint8_t MX25REraseChip(const MX25R* const dev){
+uint8_t MX25REraseChip(const MX25R* const dev) {
 
     #ifdef DEBUG
     if(dev == NULL || dev->flags.write_enabled == false)
@@ -191,7 +262,7 @@ uint8_t MX25REraseChip(const MX25R* const dev){
 
 }
 
-uint8_t MX25RDeepSleep(MX25R* const dev) {
+uint8_t MX25RDeepSleep(const MX25R* const dev) {
 
     #ifdef DEBUG
     if(dev == NULL)
@@ -203,5 +274,35 @@ uint8_t MX25RDeepSleep(MX25R* const dev) {
     dev->hal.select_chip(false);
     
     return res;
+
+}
+
+uint8_t MX25REnableWriting(MX25R* const dev)  {
+
+    dev->hal.select_chip(true);
+    uint8_t ret = MX25RWriteCommand(dev, MX25R_WRITE_EN, NULL, 0);
+    dev->hal.select_chip(false);
+
+    dev->flags.write_enabled = true;
+    return ret;
+}
+
+uint8_t MX25RDisableWriting(MX25R* const dev)  {
+
+    dev->hal.select_chip(true);
+    uint8_t ret = MX25RWriteCommand(dev, MX25R_WRITE_DIS, NULL, 0);
+    dev->hal.select_chip(false);
+
+    dev->flags.write_enabled = false;
+    return ret;
+}
+
+bool MX25RIsWritingEnabled(const MX25R* const dev) { return dev->flags.write_enabled; }
+
+bool MX25RIsWriteInProgress(MX25R* const dev) {
+    
+    MX25RStatus stat = {0};
+    MX25RReadStatus(dev, &stat);
+    return stat.write_in_progress;
 
 }

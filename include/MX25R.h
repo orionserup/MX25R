@@ -17,151 +17,204 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define MX25R_PAGE_SIZE         256     ///< 2 ^ 8
-#define MX25R_SECTOR_SIZE       2048    ///< 2 ^ 11
-#define MX25R_SMALL_BLOCK_SIZE  32768   ///< 2 ^ 15
-#define MX25R_BLOCK_SIZE        65536   ///< 2 ^ 16
+#define MX25R_PAGE_SIZE         256     ///< 2 ^ 8, How large each code page is
+#define MX25R_SECTOR_SIZE       4096    ///< 2 ^ 12, How Large Each Sector is 
+#define MX25R_SMALL_BLOCK_SIZE  32768   ///< 2 ^ 15, How Large Each half Block is
+#define MX25R_BLOCK_SIZE        65536   ///< 2 ^ 16, How large the Full Block is
 
+/// @brief All of the commands that can be run on the flash
 typedef enum MX25RCOMMAND {
 
-   MX25R_READ               = 0x03,
-   MX25R_FAST_READ          = 0x0B,
-   MX25R_DOUBLE_READ        = 0xBB,
-   MX25R_DREAD              = 0x3B,
-   MX25R_QUAD_READ          = 0xEB,
-   MX25R_QREAD              = 0x6B,
-   MX25R_PAGE_PROG          = 0x02,
-   MX25R_QPAGE_PROG         = 0x38,
-   MX25R_SECT_ERASE         = 0x20,
-   MX25R_BLOCK_ERASE32K     = 0x52,
-   MX25R_BLOCK_ERASE        = 0xD8,
-   MX25R_CHIP_ERASE         = 0x60,
-   MX25R_FLASH_ERASE        = 0xC7,
-   MX25R_READ_SFDP          = 0x5A,
-   MX25R_WRITE_EN           = 0x06,
-   MX25R_WRITE_DIS          = 0x04,
-   MX25R_READ_STAT_REG      = 0x05,
-   MX25R_READ_CONFIG_REG    = 0x15,
-   MX25R_WRITE_STAT_REG     = 0x01,
-   MX25R_SUSPEND            = 0x75,
-   MX25R_RESUME             = 0x7A,
-   MX25R_DEEP_SLEEP         = 0xB9,
-   MX25R_SET_BURST_LEN      = 0xC0,
-   MX25R_READ_ID            = 0x9F,
-   MX25R_READ_EID           = 0xAB,
-   MX25R_READ_EMID          = 0x90,
-   MX25R_ENTER_OTP          = 0xB1,
-   MX25R_EXIT_OTP           = 0xC1,
-   MX25R_READ_SEC_REG       = 0x2B,
-   MX25R_WRITE_SEC_REG      = 0x2F,
-   MX25R_NOP                = 0x00,
-   MX25R_RESET_EN           = 0x66,
-   MX25R_RESET              = 0x99
+   MX25R_READ               = 0x03, ///< Read a series of bytes from flash
+   MX25R_FAST_READ          = 0x0B, ///< Read a series of bytes but faster
+   MX25R_DOUBLE_READ        = 0xBB, ///< Two Channel Input and Output Reading  
+   MX25R_DREAD              = 0x3B, ///< One Channel Input 2 Channel Output Reading
+   MX25R_QUAD_READ          = 0xEB, ///< Four Channel Input and Output Reading
+   MX25R_QREAD              = 0x6B, ///< One Channel Input and Four Channel Output 
+   MX25R_PAGE_PROG          = 0x02, ///< Program a 256 byte page that was erased
+   MX25R_QPAGE_PROG         = 0x38, ///< Quad Input/Output program a page
+   MX25R_SECT_ERASE         = 0x20, ///< Erase a 4KB Sector so that it can be programmed
+   MX25R_BLOCK_ERASE32K     = 0x52, ///< Erase a 32KB Block so that it can be programmed
+   MX25R_BLOCK_ERASE        = 0xD8, ///< Erase a 64KB Block so that it can be programmed
+   MX25R_CHIP_ERASE         = 0x60, ///< Erase the Entire Chip
+   MX25R_FLASH_ERASE        = 0xC7, ///< Erase all of the Flash Memory
+   MX25R_READ_SFDP          = 0x5A, ///< Read the SFDP Register
+   MX25R_WRITE_EN           = 0x06, ///< Enable Erasing and Programming the Flash
+   MX25R_WRITE_DIS          = 0x04, ///< Disable Erasinfg and Programming the Flash   
+   MX25R_READ_STAT_REG      = 0x05, ///< Read the Status Register
+   MX25R_READ_CONFIG_REG    = 0x15, ///< Read the Configuration Register
+   MX25R_WRITE_STAT_REG     = 0x01, ///< Write to the Status and Configuration Register Together
+   MX25R_SUSPEND            = 0x75, ///< Suspend any Erase or Programming Actions
+   MX25R_RESUME             = 0x7A, ///< Resume any suspended Action
+   MX25R_DEEP_SLEEP         = 0xB9, ///< Put the Flash in to ultra low power deep sleep
+   MX25R_SET_BURST_LEN      = 0xC0, ///< Set the read burst length for burst reading
+   MX25R_READ_ID            = 0x9F, ///< Read the Chip ID
+   MX25R_READ_EID           = 0xAB, ///< Read the Electrical ID
+   MX25R_READ_EMID          = 0x90, ///< Read the Electromechanical ID
+   MX25R_ENTER_OTP          = 0xB1, ///< Enter the OTP Region of the Flash
+   MX25R_EXIT_OTP           = 0xC1, ///< Leave the OTP Region of the Flash
+   MX25R_READ_SEC_REG       = 0x2B, ///< Read the Security Status and Features Register 
+   MX25R_WRITE_SEC_REG      = 0x2F, ///< Write the Security Status and Features Register
+   MX25R_NOP                = 0x00, ///< Does Nothing
+   MX25R_RESET_EN           = 0x66, ///< Enables Software Reset
+   MX25R_RESET              = 0x99  ///< Software Reset
 
 } MX25RCommand;
 
+/// @brief Runtime flags that are associated with Hardware ability/config
 typedef struct MX25RFLAGS {
 
-    bool write_enabled;
-    bool reset_enabled;
+    bool write_enabled;     ///< If the Flash is writable
+    bool reset_enabled;     ///< If Software Reset is enabled
 
 } MX25RFlags;
 
+typedef struct MX25RSECURITYREG {
+
+    bool erase_failed;
+    bool program_failed;
+    bool erase_suspended;
+    bool program_suspended;
+    bool otp_sector1_locked;
+    bool otp_sector2_locked;
+
+} MX25RSecurityReg;
+
+/// @brief Represents the status of the base operations
 typedef struct MX25RSSTATUS {
 
-    bool status_register_write_protected;
-    bool quad_mode_enable;
-    uint8_t block_protection_level;
-    bool write_enabled;
-    bool write_in_progress;
+    bool status_register_write_protected;   ///< If this register can be written to
+    bool quad_mode_enable;                  ///< If Quad Channel I/O is Enabled
+    uint8_t block_protection_level;         ///< How many blocks are set to be protected via block protection (2 ^ value) either from the top or from the bottom (default top)
+    bool write_enabled;                     ///< If we are allowed to write to flash
+    bool write_in_progress;                 ///< If there is a current program or erase operation in progress
 
 } MX25RStatus;
 
+/// @brief Contains all of the Hardware functions needed to communicate with the flash, primarily SPI
 typedef struct MX25RHAL {
 
-    /// @brief 
-    uint32_t (*spi_write)(const void* const data, const uint32_t size);
+    /// @brief Writes to a Device on the SPI Bus, returns the number of bytes written, 0 if there was an error
+    uint32_t (*spi_write)(const void* const data, const uint32_t size); 
 
-    /// @brief 
+    /// @brief Reads from a device on the SPI bus, returns the number of bytes read, 0 if there was an error
     uint32_t (*spi_read)(void* const data, const uint32_t size);
 
-    /// @brief 
+    /// @brief Toggles the CS pin, true corresponds the to pin being pulled low and vice versa
     void (*select_chip)(const bool is_selected);
 
 } MX25RHAL;
 
+/// @brief A struct representing the flash 
 typedef struct MX25R {
 
-    MX25RHAL hal;
-    MX25RFlags flags;
-    uint8_t size_in_mb;
-
+    MX25RHAL hal;       ///< Hardware functions to control the Flash
+    MX25RFlags flags;   ///< Configuration and other runtime flags
+    #ifdef DEBUG
+    uint8_t size_in_mb; ///< How big the flash is in megabytes, used for bound checking ( only in debug )
+    #endif
 } MX25R;
 
+#ifdef DEBUG
+
 /**
- * @brief 
+ * @brief Initializes a MX25R Object with the given parameters
  * 
- * @param dev 
- * @param hal 
- * @param low_power 
- * @param size_in_mb 
- * @return MX25R* 
+ * @param[out] dev: Device to Initialize
+ * @param[in] hal: Hardware functionality to give it
+ * @param[in] low_power: If we want it running in low power mode
+ * @param[in] size_in_mb: How big in MB the flash is, used for bounds checking
+ * @return MX25R*: NULL if it failed to initialize and dev if it worked
  */
 MX25R* MX25RInit(MX25R* const dev, const MX25RHAL* const hal, const bool low_power, const uint8_t size_in_mb);
 
+#else
+
 /**
- * @brief 
+ * @brief Initializes the MX25R Object
  * 
- * @param dev 
+ * @param[in] dev: Device we want to Initialize 
+ * @param[in] hal: Hardware level functions for the device
+ * @param[in] low_power: If we want the device to be in low power or performance mode
+ * @return MX25R*: The pointer to the initialized object, NULL if init failed
+ */
+MX25R* MX25RInit(MX25R* const dev, const MX25RHAL* const hal, const bool low_power);
+
+#endif
+
+/**
+ * @brief Deinitializes a flash object
+ * 
+ * @param[in] dev: Flash to Deinit 
  */
 void MX25RDeinit(MX25R* const dev);
 
 /**
- *
- * @param address
- * @param output
- * @param size
- * @return
+ * @brief Reads bytes from flash
+ * 
+ * @param[in] dev: Device to read from 
+ * @param[in] address: Address to read from 
+ * @param[out] output: Buffer to read into
+ * @param[in] size: How many bytes to read 
+ * @return uint8_t: How many bytes were processed in the command, 0 if there was an error 
  */
 uint8_t MX25RRead(const MX25R* const dev, const uint32_t address, uint8_t* const output, const uint32_t size);
 
 /**
- * @brief 
+ * @brief Reads from the flash at max speed
  * 
- * @param dev 
- * @param address 
- * @param output 
- * @param size 
- * @return uint32_t 
+ * @param[in] dev: Device to read from 
+ * @param[in] address: Address to read from 
+ * @param[out] output: Buffer to read into 
+ * @param[in] size: How many bytes to read 
+ * @return uint8_t: How many bytes were processed in the command, 0 if error 
  */
-uint32_t MX25RFastRead(const MX25R* const dev, const uint32_t address, uint8_t* const output, const uint32_t size);
+uint8_t MX25RFastRead(const MX25R* const dev, const uint32_t address, uint8_t* const output, const uint32_t size);
+
+/**
+ * @brief Reads the Status Register into a Status Object
+ * 
+ * @param[in] dev: Device to read from
+ * @param[out] status: Status buffer to read into 
+ * @return uint8_t: How many bytes were processed by the command, 0 if there was an error
+ */
+uint8_t MX25RReadStatus(MX25R* const dev, MX25RStatus* const status);
 
 /**
  * @brief 
  * 
  * @param dev 
- * @param status 
- * @return uint8_t
+ * @param reg 
+ * @return uint8_t 
  */
-uint8_t MX25RReadStatus(const MX25R* const dev, MX25RStatus* const status);
+uint8_t MX25RReadSecurityReg(const MX25R* const dev, MX25RSecurityReg* const reg);
 
 /**
  * @brief 
  * 
  * @param dev 
- * @param page 
- * @param data 
- * @param size 
- * @return uint16_t 
+ * @param reg 
+ * @return uint8_t 
+ */
+uint8_t MX25RWriteSecurityReg(const MX25R* const dev, bool lockdown_otp_sector1);
+
+/**
+ * @brief Programs a page (256 bytes) with whatever you feed it
+ * @note Page must be erased before programming
+ * @param[in] dev: Device to write to
+ * @param[in] page: Which page to write to 
+ * @param[in] data: Data to Write to the page 
+ * @param[in] size: How many bytes to write to the page - 1, 0 is 1 byte written 
+ * @return uint8_t: How many bytes were registered with the command, 0 if there was an error  
  */
 uint8_t MX25RPageProgram(const MX25R* const dev, const uint16_t page, const uint8_t* const data, const uint8_t size);
 
 /**
- * @brief 
+ * @brief Erases a Sector of size 4096 so that it can be reprogrammed
  * 
- * @param dev 
- * @param sector 
- * @return uint16_t 
+ * @param[in] dev: Device to erase the sector of
+ * @param[in] sector: Sector to erase 
+ * @return uint8_t: How many bytes of the command were processed successfully, 0 if there was an error  
  */
 uint8_t MX25REraseSector(const MX25R* const dev, const uint16_t sector);
 
@@ -240,6 +293,6 @@ bool MX25RIsWritingEnabled(const MX25R* const dev);
  * @return true 
  * @return false 
  */
-bool MX25RIsWriteInProgress(const MX25R* const dev);
+bool MX25RIsWriteInProgress(MX25R* const dev);
 
 #endif // include guard

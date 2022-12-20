@@ -38,7 +38,7 @@ typedef enum MX25RCOMMAND {
    MX25R_BLOCK_ERASE        = 0xD8, ///< Erase a 64KB Block so that it can be programmed
    MX25R_CHIP_ERASE         = 0x60, ///< Erase the Entire Chip
    MX25R_FLASH_ERASE        = 0xC7, ///< Erase all of the Flash Memory
-   MX25R_READ_SFDP          = 0x5A, ///< Read the SFDP Register
+   MX25R_READ_SFDP          = 0x5A, ///< Read the SFDP(Serial Flash Discoverable Parameter) Register
    MX25R_WRITE_EN           = 0x06, ///< Enable Erasing and Programming the Flash
    MX25R_WRITE_DIS          = 0x04, ///< Disable Erasinfg and Programming the Flash   
    MX25R_READ_STAT_REG      = 0x05, ///< Read the Status Register
@@ -49,7 +49,7 @@ typedef enum MX25RCOMMAND {
    MX25R_DEEP_SLEEP         = 0xB9, ///< Put the Flash in to ultra low power deep sleep
    MX25R_SET_BURST_LEN      = 0xC0, ///< Set the read burst length for burst reading
    MX25R_READ_ID            = 0x9F, ///< Read the Chip ID
-   MX25R_READ_EID           = 0xAB, ///< Read the Electrical ID
+   MX25R_READ_ESIG          = 0xAB, ///< Read the Electrical Signature
    MX25R_READ_EMID          = 0x90, ///< Read the Electromechanical ID
    MX25R_ENTER_OTP          = 0xB1, ///< Enter the OTP Region of the Flash
    MX25R_EXIT_OTP           = 0xC1, ///< Leave the OTP Region of the Flash
@@ -69,14 +69,15 @@ typedef struct MX25RFLAGS {
 
 } MX25RFlags;
 
+/// @brief All of the flags from the Security Register
 typedef struct MX25RSECURITYREG {
 
-    bool erase_failed;
-    bool program_failed;
-    bool erase_suspended;
-    bool program_suspended;
-    bool otp_sector1_locked;
-    bool otp_sector2_locked;
+    bool erase_failed;      ///< If the Erase that was executed failed
+    bool program_failed;    ///< If the Program that was executed failed
+    bool erase_suspended;   ///< If there is an Erase operation in progress that was suspended
+    bool program_suspended; ///< If there was a Program operation in progress that was suspended
+    bool otp_sector1_locked;///< If the first sector of the OTP section is locked for writing
+    bool otp_sector2_locked;///< If the second sector of the OTP section is locked, will be factory programmed
 
 } MX25RSecurityReg;
 
@@ -90,6 +91,27 @@ typedef struct MX25RSSTATUS {
     bool write_in_progress;                 ///< If there is a current program or erase operation in progress
 
 } MX25RStatus;
+
+#pragma pack(push, 1)
+
+/// @brief All of the Device Identification Information
+typedef struct MX25RID {
+
+    struct { 
+        uint8_t man_id;     ///< Manufacturer ID (Should be 0xC2)
+        uint8_t mem_type;   ///< Memory Type (Should be 0x28)
+        uint8_t mem_density;///< Memory Density (Depends on Flash Size)
+    } id;
+    
+    uint8_t electronic_sig;        ///< Electronic ID (Should be 0x15)
+    struct { 
+        uint8_t man_id;     ///< Manufacturer ID (Should be 0xC2)
+        uint8_t dev_id;     ///< Device ID (Depends on Device) 
+    } em_id;
+
+} MX25RID;
+
+#pragma pack(pop)
 
 /// @brief Contains all of the Hardware functions needed to communicate with the flash, primarily SPI
 typedef struct MX25RHAL {
@@ -105,7 +127,7 @@ typedef struct MX25RHAL {
 
 } MX25RHAL;
 
-/// @brief A struct representing the flash 
+/// @brief A struct representing the flash device
 typedef struct MX25R {
 
     MX25RHAL hal;       ///< Hardware functions to control the Flash
@@ -114,6 +136,8 @@ typedef struct MX25R {
     uint8_t size_in_mb; ///< How big the flash is in megabytes, used for bound checking ( only in debug )
     #endif
 } MX25R;
+
+// -------------------------------------- Init and Deinit ------------------------------------ //
 
 #ifdef DEBUG
 
@@ -149,6 +173,8 @@ MX25R* MX25RInit(MX25R* const dev, const MX25RHAL* const hal, const bool low_pow
  */
 void MX25RDeinit(MX25R* const dev);
 
+// -------------------------------------------- Reading Functions ---------------------------------- //
+
 /**
  * @brief Reads bytes from flash
  * 
@@ -181,20 +207,31 @@ uint8_t MX25RFastRead(const MX25R* const dev, const uint32_t address, uint8_t* c
 uint8_t MX25RReadStatus(MX25R* const dev, MX25RStatus* const status);
 
 /**
- * @brief 
+ * @brief Reads the security register from the device, contains past state information and if the OTP is writable
  * 
- * @param dev 
- * @param reg 
- * @return uint8_t 
+ * @param[in] dev: Device to read from 
+ * @param[out] reg: Where to read the register to
+ * @return uint8_t: The Command execution status, 0 if there was an error 
  */
 uint8_t MX25RReadSecurityReg(const MX25R* const dev, MX25RSecurityReg* const reg);
 
 /**
- * @brief 
+ * @brief Read all of the ID 
  * 
- * @param dev 
- * @param reg 
- * @return uint8_t 
+ * @param[in] dev: Device to read the ID from 
+ * @param[out] id: ID struct to write into 
+ * @return uint8_t: Command Execution status, 0 if failure 
+ */
+uint8_t MX25RReadID(const MX25R* const dev, MX25RID* const id);
+
+// ------------------------------------ Writing and Programming Functions ------------------------------ //
+
+/**
+ * @brief Write to the Security register, the only configurable paramaters is an OTP flag to lock out the first part of the OTP block
+ * 
+ * @param[in] dev: Device we want to write to
+ * @param[in] lockdown_otp_sector1: If we want to lock down the first sector of the OTP region
+ * @return uint8_t: Command 
  */
 uint8_t MX25RWriteSecurityReg(const MX25R* const dev, bool lockdown_otp_sector1);
 
@@ -208,6 +245,8 @@ uint8_t MX25RWriteSecurityReg(const MX25R* const dev, bool lockdown_otp_sector1)
  * @return uint8_t: How many bytes were registered with the command, 0 if there was an error  
  */
 uint8_t MX25RPageProgram(const MX25R* const dev, const uint16_t page, const uint8_t* const data, const uint8_t size);
+
+// ----------------------------------------- Erasing Functions ----------------------------------------------- //
 
 /**
  * @brief Erases a Sector of size 4096 so that it can be reprogrammed
@@ -240,31 +279,88 @@ uint8_t MX25REraseBlock(const MX25R* const dev, const uint8_t block);
  * @brief 
  * 
  * @param dev 
+ * @return uint8_t 
  */
 uint8_t MX25REraseChip(const MX25R* const dev);
+
+// ---------------------------------------- OTP Functions --------------------------------------- //
+
+/**
+ * @brief Enters the OTP region so you can program the OTP Region
+ * 
+ * @param dev 
+ * @return uint8_t 
+ */
+uint8_t MX25REnterOTPRegion(const MX25R* const dev);
 
 /**
  * @brief 
  * 
  * @param dev 
+ * @return uint8_t 
+ */
+uint8_t MX25RExitOTPRegion(const MX25R* const dev);
+
+/**
+ * @brief 
+ * 
+ * @param dev 
+ * @return true 
+ * @return false 
+ */
+bool MX25RIsOTPRegionLocked(const MX25R* const dev);
+
+// ------------------------------------- Utility Functions ------------------------------------ //
+
+/**
+ * @brief Verifies if an Erase was performed fully
+ * 
+ * @param[in] dev: Device to Check 
+ * @return true: If the Erase was successful
+ * @return false: If the Erase Failed
+ */
+bool MX25RVerifyErase(const MX25R* const dev);
+
+/**
+ * @brief Verifies if a Program Performed correctly
+ * 
+ * @param[in] dev: Device to verify 
+ * @return true: If the program was successful
+ * @return false: If the program failed 
+ */
+bool MX25RVerifyProgram(const MX25R* const dev);
+
+/**
+ * @brief Puts the device into Deep Sleep, super low power option
+ * 
+ * @param[in] dev: Device to put into deep sleep 
+ * @return uint8_t: Command Execution status, 0 if there is an error 
  */
 uint8_t MX25RDeepSleep(const MX25R* const dev);
 
 /**
- * @brief 
+ * @brief Enables high speed burst reading with wrap around of a certain length
  * 
- * @param dev 
- * @param cmd 
- * @param args 
- * @param args_size 
- * @return uint8_t 
+ * @param[in] dev: Device to Enable Burst reading on 
+ * @param[in] wrap_length: 0 - 3, 0: 8 bytes, 1: 16 bytes, 2: 32 bytes, 3: 64 bytes, else disabled 
+ * @return uint8_t: Command Execution status, 0 if there was an error
  */
-uint8_t MX25RWriteCommand(const MX25R* const dev, const MX25RCommand cmd, const uint8_t* const args, const uint8_t args_size);
+uint8_t MX25REnableBurstRead(const MX25R* const dev, const uint8_t wrap_length);
 
 /**
- * @brief 
+ * @brief Disables burst reading with wrap around
  * 
- * @param dev 
+ * @param[in] dev: Device to disable burst reading on
+ * @return uint8_t: Command Execution Status, 0 if error
+ */
+uint8_t MX25RDisableBurstRead(const MX25R* const dev);
+
+// --------------------------------- State Setting and Reading Functions ----------------------------- //
+
+/**
+ * @brief Enables erasing and programming of the device
+ * 
+ * @param[in] dev 
  * @return uint8_t 
  */
 uint8_t MX25REnableWriting(MX25R* const dev);
@@ -272,7 +368,7 @@ uint8_t MX25REnableWriting(MX25R* const dev);
 /**
  * @brief 
  * 
- * @param dev 
+ * @param[in] dev 
  * @return uint8_t 
  */
 uint8_t MX25RDisableWriting( MX25R* const dev);
@@ -294,5 +390,18 @@ bool MX25RIsWritingEnabled(const MX25R* const dev);
  * @return false 
  */
 bool MX25RIsWriteInProgress(MX25R* const dev);
+
+// --------------------------------------------- Low Level Exposed API ---------------------------------------------- //
+
+/**
+ * @brief Writes a command packet to the device, each command takes its own args
+ * 
+ * @param[in] dev: Device to write to 
+ * @param[in] cmd: Command to Send 
+ * @param[in] args: Arguments to that command, NULL if there are none 
+ * @param[in] args_size: How many arguments are for the comamand 
+ * @return uint8_t: The status of the transfer, 0 if there was an error 
+ */
+uint8_t MX25RWriteCommand(const MX25R* const dev, const MX25RCommand cmd, const uint8_t* const args, const uint8_t args_size);
 
 #endif // include guard

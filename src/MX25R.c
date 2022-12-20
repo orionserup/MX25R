@@ -13,24 +13,6 @@
 
 #include <string.h>
 
-/**
- * @brief 
- * 
- * @param dev 
- * @return true 
- * @return false 
- */
-static bool MX25RVerifyErase(const MX25R* const dev);
-
-/**
- * @brief 
- * 
- * @param dev 
- * @return true 
- * @return false 
- */
-static bool MX25RVerifyProgram(const MX25R* const dev);
-
 uint8_t MX25RWriteCommand(const MX25R *const dev, const MX25RCommand cmd, const uint8_t *const args, const uint8_t arg_size) {
 
     #ifdef DEBUG // we have to have a valid device and we can't have more than 5 args acoording to the datasheet
@@ -77,6 +59,13 @@ void MX25RDeinit(MX25R* const dev) {
 
     MX25RDeepSleep(dev);
 
+    dev->flags = (MX25RFlags){0, 0};
+    dev->hal = (MX25RHAL){ NULL, NULL, NULL };
+    
+    #ifdef DEBUG
+    dev->size_in_mb = 0;
+    #endif
+
 }
 
 uint8_t MX25RRead(const MX25R* const dev, const uint32_t address, uint8_t *const output, const uint32_t size) {
@@ -92,11 +81,12 @@ uint8_t MX25RRead(const MX25R* const dev, const uint32_t address, uint8_t *const
 
     uint8_t read_args[] = {(uint8_t)(address >> 16), (uint8_t)(address >> 8), address & 0xff};
     uint8_t ret = MX25RWriteCommand(dev, MX25R_READ, read_args, 3);
-    uint8_t out = ret == 0 ? 0 : (uint8_t)dev->hal.spi_read(output, size);
+    if(ret)
+        dev->hal.spi_read(output, size);
 
     dev->hal.select_chip(false);
 
-    return ret ? (uint8_t)out : 0;
+    return ret;
 }
 
 uint8_t MX25RReadStatus(MX25R* const dev, MX25RStatus* const status) {
@@ -127,6 +117,31 @@ uint8_t MX25RReadStatus(MX25R* const dev, MX25RStatus* const status) {
     return ret;
 }
 
+uint8_t MX25RReadID(const MX25R* const dev, MX25RID* const id) {
+
+    #ifdef DEBUG
+    if(id == NULL)
+        return 0;
+    #endif
+
+    dev->hal.select_chip(true);
+
+    uint8_t ret = MX25RWriteCommand(dev, MX25R_READ_ID, NULL, 0);
+    if(ret)
+        dev->hal.spi_read(&id->id, 3);
+
+    const uint8_t dummy_bytes[] = { 0x00, 0x00, 0x00 };
+    ret = MX25RWriteCommand(dev, MX25R_READ_ESIG, dummy_bytes, 3);
+    if(ret)
+        dev->hal.spi_read(&id->electronic_sig, 1);
+
+    ret = MX25RWriteCommand(dev, MX25R_READ_EMID, dummy_bytes, 3);
+    if(ret)
+        dev->hal.spi_read(&id->em_id, 2);
+
+    return ret;
+
+}
 
 uint8_t MX25RFastRead(const MX25R* const dev, const uint32_t address, uint8_t* const output, const uint32_t size) {
 
@@ -139,13 +154,14 @@ uint8_t MX25RFastRead(const MX25R* const dev, const uint32_t address, uint8_t* c
 
     dev->hal.select_chip(true);
 
-    uint8_t fast_read_args[] = {(uint8_t)(address >> 16), (uint8_t)(address >> 8), address & 0xff, 0};
+    uint8_t fast_read_args[] = { (uint8_t)(address >> 16), (uint8_t)(address >> 8), address & 0xff, 0 };
     uint8_t ret = MX25RWriteCommand(dev, MX25R_FAST_READ, fast_read_args, 4);
-    uint8_t out = ret == 0 ? 0 : (uint8_t)dev->hal.spi_read(output, size);
+    if(ret)
+        dev->hal.spi_read(output, size);
 
     dev->hal.select_chip(false);
 
-    return ret ? (uint8_t)out : 0;
+    return ret;
 
 }
 
@@ -156,14 +172,21 @@ uint8_t MX25RReadSecurityReg(const MX25R* const dev, MX25RSecurityReg* const reg
         return 0;
     #endif
 
-    uint8_t raw_reg = 0;
     dev->hal.select_chip(true);
+    
+    uint8_t raw_reg = 0;
     uint8_t ret = MX25RWriteCommand(dev, MX25R_READ_SEC_REG, NULL, 0);
     if(ret)
         dev->hal.spi_read(&raw_reg, 1);
+    
     dev->hal.select_chip(false);
 
-    reg->erase_failed = raw_reg
+    reg->erase_failed = raw_reg & (1 << 6);
+    reg->erase_suspended = raw_reg & (1 << 3);
+    reg->program_failed = raw_reg & (1 << 5);
+    reg->program_suspended = raw_reg & (1 << 2);
+    reg->otp_sector1_locked = raw_reg & (1 << 1);
+    reg->otp_sector2_locked = raw_reg & (1 << 0);
 
     return ret;
 
@@ -171,7 +194,19 @@ uint8_t MX25RReadSecurityReg(const MX25R* const dev, MX25RSecurityReg* const reg
 
 uint8_t MX25RWriteSecurityReg(const MX25R* const dev, bool lockdown_otp_sector1) {
 
+    if(lockdown_otp_sector1)
+        return MX25RWriteCommand(dev, MX25R_WRITE_SEC_REG, NULL, 0);
 
+    return 1;
+}
+
+uint8_t MX25RWriteSecurityReg(const MX25R* const dev, bool lockdown_otp_sector1) {
+
+    dev->hal.select_chip(true);
+
+
+
+    dev->hal.select_chip(false);
 
 }
 
@@ -258,6 +293,7 @@ uint8_t MX25REraseChip(const MX25R* const dev) {
     uint8_t res = MX25RWriteCommand(dev, MX25R_CHIP_ERASE, NULL, 0);
     dev->hal.select_chip(false);
 
+
     return res;
 
 }
@@ -306,3 +342,21 @@ bool MX25RIsWriteInProgress(MX25R* const dev) {
     return stat.write_in_progress;
 
 }
+
+bool MX25RVerifyErase(const MX25R* const dev)  {
+
+    MX25RSecurityReg reg;
+    MX25RReadSecurityReg(dev, &reg);
+    return !(reg.erase_failed || reg.erase_suspended);
+
+}
+
+bool MX25RVerifyProgram(const MX25R* const dev) {
+
+    MX25RSecurityReg reg;
+    MX25RReadSecurityReg(dev, &reg);
+    return !(reg.program_failed || reg.program_suspended);
+
+}
+
+uint8_t MX25RSetBurstLength(const MX25R* const dev);

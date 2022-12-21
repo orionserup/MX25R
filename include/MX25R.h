@@ -1,7 +1,7 @@
 /**
  * @file MX25R.h
- * @author your name (you@domain.com)
- * @brief 
+ * @author orion Serup (oserup@proton.me)
+ * @brief Contains the Definitions and Declarations for the MX25R API
  * @version 0.1
  * @date 2022-12-16
  * 
@@ -250,28 +250,28 @@ uint8_t MX25RPageProgram(const MX25R* const dev, const uint16_t page, const uint
 uint8_t MX25REraseSector(const MX25R* const dev, const uint16_t sector);
 
 /**
- * @brief 
+ * @brief Erases a block of size 32768 so that it can be reprogrammed
  * 
- * @param dev 
- * @param block 
- * @return uint8_t 
+ * @param[in] dev: Device to erase the block on
+ * @param[in] block: Block to erase, bounds checking is done if DEBUG is defined 
+ * @return uint8_t: Command execution status, 0 if there was an error
  */
 uint8_t MX25REraseBlock32K(const MX25R* const dev, const uint8_t block);
 
 /**
- * @brief 
+ * @brief Erases (Sets the Bits to 1) a block of size 65536 so that it can be reprogrammed
  * 
- * @param dev 
- * @param block 
- * @return uint8_t 
+ * @param[in] dev: Device to clear the block on
+ * @param[in] block: Block to erase, bounds checking is done in debug mode
+ * @return uint8_t: Command Execution status. 0 if there was an error
  */
 uint8_t MX25REraseBlock(const MX25R* const dev, const uint8_t block);
 
 /**
- * @brief 
+ * @brief Sets all of the bits in the flash to 1, so that it can be reprogrammed
  * 
- * @param dev 
- * @return uint8_t 
+ * @param[in] dev: Device to erase 
+ * @return uint8_t: Command Execution status, 0 if there was an error 
  */
 uint8_t MX25REraseChip(const MX25R* const dev);
 
@@ -280,25 +280,25 @@ uint8_t MX25REraseChip(const MX25R* const dev);
 /**
  * @brief Enters the OTP region so you can program the OTP Region
  * 
- * @param dev 
- * @return uint8_t 
+ * @param[in] dev: Device to Enter the OTP Region of 
+ * @return uint8_t: Command Execution status, 0 if there was an error 
  */
 uint8_t MX25REnterOTPRegion(const MX25R* const dev);
 
 /**
- * @brief 
+ * @brief Exits the OTP Region, called after @ref MX25REnterOTPRegion
  * 
- * @param dev 
- * @return uint8_t 
+ * @param[in] dev: Device to Exit the OTP region of
+ * @return uint8_t: Command execution status, 0 if there was an error
  */
 uint8_t MX25RExitOTPRegion(const MX25R* const dev);
 
 /**
- * @brief 
+ * @brief Checks if th OTP region can be programmed at all
  * 
- * @param dev 
- * @return true 
- * @return false 
+ * @param[in] dev: Device to check the status of 
+ * @return true: If the OTP region is locked and can not be entered 
+ * @return false: If the OTP region is available to be entered 
  */
 bool MX25RIsOTPRegionLocked(const MX25R* const dev);
 
@@ -377,33 +377,33 @@ uint8_t MX25RDisableBurstRead(const MX25R* const dev);
  * @brief Enables erasing and programming of the device
  * 
  * @param[in] dev: Device to Enable writing on
- * @return uint8_t 
+ * @return uint8_t: Command status, 0 if they failed
  */
 uint8_t MX25REnableWriting(MX25R* const dev);
 
 /**
- * @brief 
+ * @brief Disables Erasing and Programming of the Device
  * 
- * @param[in] dev 
- * @return uint8_t 
+ * @param[in] dev: Device to Disable erasing and programming on 
+ * @return uint8_t: Command Execution status, 0 if there was an error
  */
 uint8_t MX25RDisableWriting( MX25R* const dev);
 
 /**
- * @brief 
+ * @brief Checks if we can write and erase to thed device
  * 
- * @param dev 
- * @return true 
- * @return false 
+ * @param[in] dev: Device to check 
+ * @return true: If we can write and erase 
+ * @return false: If we can't write or erase 
  */
 bool MX25RIsWritingEnabled(const MX25R* const dev);
 
 /**
- * @brief 
+ * @brief Checks if there is a programming in progress
  * 
- * @param dev 
- * @return true 
- * @return false 
+ * @param[in] dev: Device to check 
+ * @return true: If we are still programming 
+ * @return false: If we have to wait until its done 
  */
 bool MX25RIsWriteInProgress(MX25R* const dev);
 

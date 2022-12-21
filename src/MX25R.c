@@ -1,7 +1,7 @@
 /**
  * @file MX25R.c
- * @author your name (you@domain.com)
- * @brief
+ * @author Orion Serup (oserup@proton.me)
+ * @brief Contains the Implementation of the MX25R Functionality
  * @version 0.1
  * @date 2022-12-19
  *
@@ -13,6 +13,15 @@
 
 #include <string.h>
 
+/**
+ * @brief 
+ * 
+ * @param dev 
+ * @param command 
+ * @param args 
+ * @param args_size 
+ * @return uint8_t 
+ */
 static uint8_t MX25RExecComplexCommand(const MX25R* const dev, const MX25RCommand command, const uint8_t* const args, const uint8_t args_size) {
 
     #ifdef DEBUG
@@ -28,8 +37,26 @@ static uint8_t MX25RExecComplexCommand(const MX25R* const dev, const MX25RComman
 
 }
 
+/**
+ * @brief 
+ * 
+ * @param dev 
+ * @param command 
+ * @return uint8_t 
+ */
 static uint8_t MX25RExecSimpleCommand(const MX25R* const dev, const MX25RCommand command) { return MX25RExecComplexCommand(dev, command, NULL, 0); }
 
+/**
+ * @brief 
+ * 
+ * @param dev 
+ * @param command 
+ * @param args 
+ * @param args_size 
+ * @param buffer 
+ * @param size 
+ * @return uint8_t 
+ */
 static uint8_t MX25RExecWritingCommand(const MX25R* const dev, const MX25RCommand command, const uint8_t* const args, const uint8_t args_size, const void* const buffer, const uint8_t size) {
 
     #ifdef DEBUG
@@ -50,6 +77,15 @@ static uint8_t MX25RExecWritingCommand(const MX25R* const dev, const MX25RComman
 
 }
 
+/**
+ * @brief Fully Implements the Procedure of an Erase Type command
+ * 
+ * @param[in] dev: Device to Erase data of 
+ * @param[in] cmd: Erase Type command 
+ * @param[in] args: Arguments for that command 
+ * @param[in] args_size: The number of arguments for that command 
+ * @return uint8_t: The command status, 0 if there was an error 
+ */
 static uint8_t MX25RExecEraseCommand(const MX25R* const dev, const MX25RCommand cmd, const uint8_t* const args, const uint8_t args_size) {
 
     #ifdef DEBUG
@@ -61,6 +97,17 @@ static uint8_t MX25RExecEraseCommand(const MX25R* const dev, const MX25RCommand 
 
 }
 
+/**
+ * @brief Fully Implements a reading command, ie it selects the chip, writes the command to the ship, and then reads the values and unselects the chip
+ * 
+ * @param[in] dev: Device to read from 
+ * @param[in] cmd: Reading Command 
+ * @param[in] args: Arguments for the reading command 
+ * @param[in] args_size: How many argumments are for that command 
+ * @param[out] out: The Buffer to write the read information into 
+ * @param[in] size: How many bytes to read  
+ * @return uint8_t: The command state, 0 if there was an error 
+ */
 static uint8_t MX25RExecReadingCommand(const MX25R* const dev, const MX25RCommand cmd, const uint8_t* args, const uint8_t args_size, void* const out, const uint32_t size) {
 
     #ifdef DEBUG
@@ -158,11 +205,11 @@ uint8_t MX25RReadStatus(MX25R* const dev, MX25RStatus* const status) {
 
     uint8_t ret = MX25RExecReadingCommand(dev, MX25R_READ_STAT_REG, NULL, 0, &raw_status, 1);
 
-    status->write_in_progress = raw_status & 0x1;
+    status->write_in_progress = raw_status & (1 << 0);
     status->block_protection_level = (raw_status >> 2) & 0xf;
-    status->write_enabled =  raw_status & 0x2;
-    status->status_register_write_protected = raw_status & 0x80;
-    status->quad_mode_enable = raw_status & 0x40;
+    status->write_enabled =  raw_status & (1 << 1);
+    status->status_register_write_protected = raw_status & (1 << 7);
+    status->quad_mode_enable = raw_status & (1 << 2);
 
     dev->is_write_en = status->write_enabled;
 
@@ -176,20 +223,11 @@ uint8_t MX25RReadID(const MX25R* const dev, MX25RID* const id) {
         return 0;
     #endif
 
-    dev->hal.select_chip(true);
-
-    uint8_t ret = MX25RWriteCommand(dev, MX25R_READ_ID, NULL, 0);
-    if(ret)
-        dev->hal.spi_read(&id->id, 3);
-
     const uint8_t dummy_bytes[] = { 0x00, 0x00, 0x00 };
-    ret = MX25RWriteCommand(dev, MX25R_READ_ESIG, dummy_bytes, 3);
-    if(ret)
-        dev->hal.spi_read(&id->electronic_sig, 1);
-
-    ret = MX25RWriteCommand(dev, MX25R_READ_EMID, dummy_bytes, 3);
-    if(ret)
-        dev->hal.spi_read(&id->em_id, 2);
+    
+    uint8_t ret = MX25RExecReadCommand(dev, MX25R_READ_ID, NULL, 0, &id->id, 3);
+    ret *= MX25RExecuteReadCommand(dev, MX25R_READ_ESIG, dummy_bytes, 3, &id->electronic_sig, 1);
+    ret *= MX25RExecuteReadCommand(dev, MX25R_READ_EMID, dummy_bytes, 3, &id->em_id, 2);
 
     return ret;
 
@@ -204,16 +242,8 @@ uint8_t MX25RFastRead(const MX25R* const dev, const uint32_t address, uint8_t* c
         return 0;
     #endif
 
-    dev->hal.select_chip(true);
-
     uint8_t fast_read_args[] = { (uint8_t)(address >> 16), (uint8_t)(address >> 8), address & 0xff, 0 };
-    uint8_t ret = MX25RWriteCommand(dev, MX25R_FAST_READ, fast_read_args, 4);
-    if(ret)
-        dev->hal.spi_read(output, size);
-
-    dev->hal.select_chip(false);
-
-    return ret;
+    return MX25RExecReadingCommand(dev, MX25R_FAST_READ, fast_read_args, 3, output, size);
 
 }
 

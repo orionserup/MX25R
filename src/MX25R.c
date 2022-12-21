@@ -14,13 +14,13 @@
 #include <string.h>
 
 /**
- * @brief 
+ * @brief Actually sends the command to be executed with the parameters, selects the device, writes the command and unselects the device so it executes
  * 
- * @param dev 
- * @param command 
- * @param args 
- * @param args_size 
- * @return uint8_t 
+ * @param[in] dev: Device to execute the command on 
+ * @param[in] command: Command to Execute 
+ * @param[in] args: Arguments for the command 
+ * @param[in] args_size: How many arguments 
+ * @return uint8_t: Command Status, 0 if there was an error 
  */
 static uint8_t MX25RExecComplexCommand(const MX25R* const dev, const MX25RCommand command, const uint8_t* const args, const uint8_t args_size) {
 
@@ -38,24 +38,24 @@ static uint8_t MX25RExecComplexCommand(const MX25R* const dev, const MX25RComman
 }
 
 /**
- * @brief 
+ * @brief Executes a Command that takes no parameters
  * 
- * @param dev 
- * @param command 
- * @return uint8_t 
+ * @param[in] dev: Device to Execute the command on 
+ * @param[in] command: Command to Execute 
+ * @return uint8_t: Command status  
  */
 static uint8_t MX25RExecSimpleCommand(const MX25R* const dev, const MX25RCommand command) { return MX25RExecComplexCommand(dev, command, NULL, 0); }
 
 /**
- * @brief 
+ * @brief Executes a command which writes some buffer to the device for whatever reason
  * 
- * @param dev 
- * @param command 
- * @param args 
- * @param args_size 
- * @param buffer 
- * @param size 
- * @return uint8_t 
+ * @param[in] dev: Device to execute the command on
+ * @param[in] command: Command to execute 
+ * @param[in] args: Arguments for that command 
+ * @param[in] args_size: How many arguments the command takes 
+ * @param[in] buffer: Buffer to write from 
+ * @param[in] size: How many bytes to write 
+ * @return uint8_t: The Command Execution status, 0 if there was an error 
  */
 static uint8_t MX25RExecWritingCommand(const MX25R* const dev, const MX25RCommand command, const uint8_t* const args, const uint8_t args_size, const void* const buffer, const uint8_t size) {
 

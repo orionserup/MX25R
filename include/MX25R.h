@@ -61,14 +61,6 @@ typedef enum MX25RCOMMAND {
 
 } MX25RCommand;
 
-/// @brief Runtime flags that are associated with Hardware ability/config
-typedef struct MX25RFLAGS {
-
-    bool write_enabled;     ///< If the Flash is writable
-    bool reset_enabled;     ///< If Software Reset is enabled
-
-} MX25RFlags;
-
 /// @brief All of the flags from the Security Register
 typedef struct MX25RSECURITYREG {
 
@@ -103,7 +95,7 @@ typedef struct MX25RID {
         uint8_t mem_density;///< Memory Density (Depends on Flash Size)
     } id;
     
-    uint8_t electronic_sig;        ///< Electronic ID (Should be 0x15)
+    uint8_t electronic_sig; ///< Electronic ID (Should be 0x15)
     struct { 
         uint8_t man_id;     ///< Manufacturer ID (Should be 0xC2)
         uint8_t dev_id;     ///< Device ID (Depends on Device) 
@@ -131,7 +123,7 @@ typedef struct MX25RHAL {
 typedef struct MX25R {
 
     MX25RHAL hal;       ///< Hardware functions to control the Flash
-    MX25RFlags flags;   ///< Configuration and other runtime flags
+    bool is_write_en;   ///< If we can write to the device
     #ifdef DEBUG
     uint8_t size_in_mb; ///< How big the flash is in megabytes, used for bound checking ( only in debug )
     #endif
@@ -331,12 +323,36 @@ bool MX25RVerifyErase(const MX25R* const dev);
 bool MX25RVerifyProgram(const MX25R* const dev);
 
 /**
+ * @brief Resets the device, clears flags and state
+ * 
+ * @param[in] dev: Device to Reset 
+ * @return uint8_t: The Command Result, 0 indicates error
+ */
+uint8_t MX25RReset(MX25R* const dev);
+
+/**
  * @brief Puts the device into Deep Sleep, super low power option
  * 
  * @param[in] dev: Device to put into deep sleep 
  * @return uint8_t: Command Execution status, 0 if there is an error 
  */
 uint8_t MX25RDeepSleep(const MX25R* const dev);
+
+/**
+ * @brief Pauses any pending programs or erases, check the Security Register to see if you have paused actions after
+ * 
+ * @param[in] dev: Device to pause 
+ * @return uint8_t: State of the action, 0 indicates error
+ */
+uint8_t MX25RSuspend(const MX25R* const dev);
+
+/**
+ * @brief Resumes any oaused erases or programs, check the security register to see if any actions are suspended
+ * 
+ * @param[in] dev: Device to Resume actions on 
+ * @return uint8_t: Command status, 0 if there was an error 
+ */
+uint8_t MX25RResume(const MX25R* const dev);
 
 /**
  * @brief Enables high speed burst reading with wrap around of a certain length
@@ -360,7 +376,7 @@ uint8_t MX25RDisableBurstRead(const MX25R* const dev);
 /**
  * @brief Enables erasing and programming of the device
  * 
- * @param[in] dev 
+ * @param[in] dev: Device to Enable writing on
  * @return uint8_t 
  */
 uint8_t MX25REnableWriting(MX25R* const dev);

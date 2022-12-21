@@ -13,6 +13,74 @@
 
 #include <string.h>
 
+static uint8_t MX25RExecComplexCommand(const MX25R* const dev, const MX25RCommand command, const uint8_t* const args, const uint8_t args_size) {
+
+    #ifdef DEBUG
+    if(dev == NULL || args == NULL)
+        return 0;
+    #endif
+
+    dev->hal.select_chip(true);
+    uint8_t out = MX25RWriteCommand(dev, command, args, args_size);
+    dev->hal.select_chip(false);
+
+    return out;
+
+}
+
+static uint8_t MX25RExecSimpleCommand(const MX25R* const dev, const MX25RCommand command) { return MX25RExecComplexCommand(dev, command, NULL, 0); }
+
+static uint8_t MX25RExecWritingCommand(const MX25R* const dev, const MX25RCommand command, const uint8_t* const args, const uint8_t args_size, const void* const buffer, const uint8_t size) {
+
+    #ifdef DEBUG
+    if(dev == NULL || buffer == NULL || size == 0 || dev->is_write_en == false)
+        return 0;
+    #endif
+
+    dev->hal.select_chip(true);
+
+    uint8_t ret = MX25RExecComplexCommand(dev, command, args, args_size);
+    
+    if(ret)
+        dev->hal.spi_write(buffer, size);
+
+    dev->hal.select_chip(false);
+
+    return ret;
+
+}
+
+static uint8_t MX25RExecEraseCommand(const MX25R* const dev, const MX25RCommand cmd, const uint8_t* const args, const uint8_t args_size) {
+
+    #ifdef DEBUG
+    if(dev->is_write_en == false)
+        return 0;
+    #endif
+
+    return MX25RExecComplexCommand(dev, cmd, args, args_size);
+
+}
+
+static uint8_t MX25RExecReadingCommand(const MX25R* const dev, const MX25RCommand cmd, const uint8_t* args, const uint8_t args_size, void* const out, const uint32_t size) {
+
+    #ifdef DEBUG
+    if(dev == NULL)
+        return 0;
+    #endif
+
+    dev->hal.select_chip(true);
+
+    uint8_t ret = MX25RExecComplexCommand(dev, cmd, args, args_size);
+    
+    if(ret)
+        dev->hal.spi_read(out, size);
+
+    dev->hal.select_chip(false);
+
+    return ret;
+
+}
+
 uint8_t MX25RWriteCommand(const MX25R *const dev, const MX25RCommand cmd, const uint8_t *const args, const uint8_t arg_size) {
 
     #ifdef DEBUG // we have to have a valid device and we can't have more than 5 args acoording to the datasheet
@@ -45,12 +113,10 @@ MX25R* MX25RInit(MX25R *const dev, const MX25RHAL* const hal, const bool low_pow
 #endif
 
     dev->hal = *hal;
-    dev->flags = (MX25RFlags){ .write_enabled = false , .reset_enabled = false };
+    dev->is_write_en = false;
 
     const uint8_t status_config[] = {0x0, 0x0, low_power ? 0x0 : 0x02};
-    dev->hal.select_chip(true);
-    uint8_t res = MX25RWriteCommand(dev, MX25R_WRITE_STAT_REG, status_config, 3);
-    dev->hal.select_chip(false);
+    uint8_t res = MX25RExecComplexCommand(dev, MX25R_WRITE_STAT_REG, status_config, 3);
     
     return res? dev: NULL;
 }
@@ -59,7 +125,7 @@ void MX25RDeinit(MX25R* const dev) {
 
     MX25RDeepSleep(dev);
 
-    dev->flags = (MX25RFlags){0, 0};
+    dev->is_write_en = false;
     dev->hal = (MX25RHAL){ NULL, NULL, NULL };
     
     #ifdef DEBUG
@@ -77,16 +143,8 @@ uint8_t MX25RRead(const MX25R* const dev, const uint32_t address, uint8_t *const
         return 0;
     #endif
 
-    dev->hal.select_chip(true);
-
     uint8_t read_args[] = {(uint8_t)(address >> 16), (uint8_t)(address >> 8), address & 0xff};
-    uint8_t ret = MX25RWriteCommand(dev, MX25R_READ, read_args, 3);
-    if(ret)
-        dev->hal.spi_read(output, size);
-
-    dev->hal.select_chip(false);
-
-    return ret;
+    return MX25RExecReadingCommand(dev, MX25R_READ, read_args, 3, output, size);
 }
 
 uint8_t MX25RReadStatus(MX25R* const dev, MX25RStatus* const status) {
@@ -98,13 +156,7 @@ uint8_t MX25RReadStatus(MX25R* const dev, MX25RStatus* const status) {
 
     uint8_t raw_status = 0;
 
-    dev->hal.select_chip(true);
-
-    uint8_t ret = MX25RWriteCommand(dev, MX25R_READ_STAT_REG, NULL, 0);
-    if (ret)
-        dev->hal.spi_read(&raw_status, 1);
-
-    dev->hal.select_chip(false);
+    uint8_t ret = MX25RExecReadingCommand(dev, MX25R_READ_STAT_REG, NULL, 0, &raw_status, 1);
 
     status->write_in_progress = raw_status & 0x1;
     status->block_protection_level = (raw_status >> 2) & 0xf;
@@ -112,7 +164,7 @@ uint8_t MX25RReadStatus(MX25R* const dev, MX25RStatus* const status) {
     status->status_register_write_protected = raw_status & 0x80;
     status->quad_mode_enable = raw_status & 0x40;
 
-    dev->flags.write_enabled = status->write_enabled;
+    dev->is_write_en = status->write_enabled;
 
     return ret;
 }
@@ -171,15 +223,9 @@ uint8_t MX25RReadSecurityReg(const MX25R* const dev, MX25RSecurityReg* const reg
     if(reg == NULL)
         return 0;
     #endif
-
-    dev->hal.select_chip(true);
     
     uint8_t raw_reg = 0;
-    uint8_t ret = MX25RWriteCommand(dev, MX25R_READ_SEC_REG, NULL, 0);
-    if(ret)
-        dev->hal.spi_read(&raw_reg, 1);
-    
-    dev->hal.select_chip(false);
+    uint8_t ret = MX25RExecReadingCommand(dev, MX25R_READ_SEC_REG, NULL, 0, &raw_reg, 1);
 
     reg->erase_failed = raw_reg & (1 << 6);
     reg->erase_suspended = raw_reg & (1 << 3);
@@ -194,20 +240,11 @@ uint8_t MX25RReadSecurityReg(const MX25R* const dev, MX25RSecurityReg* const reg
 
 uint8_t MX25RWriteSecurityReg(const MX25R* const dev, bool lockdown_otp_sector1) {
 
-    if(lockdown_otp_sector1)
-        return MX25RWriteCommand(dev, MX25R_WRITE_SEC_REG, NULL, 0);
-
-    return 1;
-}
-
-uint8_t MX25RWriteSecurityReg(const MX25R* const dev, bool lockdown_otp_sector1) {
-
-    dev->hal.select_chip(true);
-
-
-
-    dev->hal.select_chip(false);
-
+    uint8_t res = 1;
+    if(lockdown_otp_sector1) 
+        res = MX25RExecSimpleCommand(dev, MX25R_WRITE_SEC_REG);
+    
+    return res;
 }
 
 uint8_t MX25RPageProgram(const MX25R* const dev, const uint16_t page, const uint8_t *const data, const uint8_t size) {
@@ -218,32 +255,20 @@ uint8_t MX25RPageProgram(const MX25R* const dev, const uint16_t page, const uint
         return 0;
     #endif
 
-    dev->hal.select_chip(true);
-
     uint8_t page_program_args[3] = {(uint8_t)(page >> 8), (uint8_t)(page & 0xff), 0};
-    uint8_t ret = MX25RWriteCommand(dev, MX25R_PAGE_PROG, page_program_args, 3);
-    uint8_t out = ret ? dev->hal.spi_write(data, size) : 0;
-
-    dev->hal.select_chip(false);
-
-    return out;
+    return MX25RExecWritingCommand(dev, MX25R_PAGE_PROG, page_program_args, 3, data, size);
 }
 
 uint8_t MX25REraseSector(const MX25R* const dev, const uint16_t sector) {
 
     #ifdef DEBUG
     const uint16_t max_sector = (dev->size_in_mb << 20) / MX25R_SECTOR_SIZE;
-    if(sector > max_sector || dev->flags.write_enabled == false)
+    if(sector > max_sector)
         return 0;
     #endif
 
     const uint8_t erase_sector_args[] = { 0, (sector >> 8), sector & 0xff };
-
-    dev->hal.select_chip(true);
-    uint8_t ret = MX25RWriteCommand(dev, MX25R_SECT_ERASE, erase_sector_args, 3);
-    dev->hal.select_chip(false);
-    
-    return ret;
+    return MX25RExecEraseCommand(dev, MX25R_SECT_ERASE, erase_sector_args, 3);
 
 }
 
@@ -251,89 +276,62 @@ uint8_t MX25REraseBlock32K(const MX25R* const dev, const uint8_t block) {
 
     #ifdef DEBUG
     const uint8_t max_small_block = (dev->size_in_mb << 20) / MX25R_SMALL_BLOCK_SIZE;
-    if(block > max_small_block || dev->flags.write_enabled == false)
+    if(block > max_small_block)
         return 0;
     #endif
 
     const uint8_t erase_block_args[] = { 0, 0, block };
-
-    dev->hal.select_chip(true);
-    uint8_t ret = MX25RWriteCommand(dev, MX25R_BLOCK_ERASE32K, erase_block_args, 3);
-    dev->hal.select_chip(false);
-
-    return ret;
+    return MX25RExecEraseCommand(dev, MX25R_BLOCK_ERASE32K, erase_block_args, 3);
 }
 
 uint8_t MX25REraseBlock(const MX25R* const dev, const uint8_t block) {
 
     #ifdef DEBUG
     const uint8_t max_block = (dev->size_in_mb << 20) / MX25R_BLOCK_SIZE;
-    if(block > max_block || dev->flags.write_enabled == false)
+    if(block > max_block)
         return 0;
     #endif
 
     const uint8_t erase_block_args[] = { 0, 0, block };
-
-    dev->hal.select_chip(true);
-    uint8_t ret = MX25RWriteCommand(dev, MX25R_BLOCK_ERASE, erase_block_args, 3);
-    dev->hal.select_chip(false);
-
-    return ret;
+    return MX25RExecEraseCommand(dev, MX25R_BLOCK_ERASE, erase_block_args, 3);
 
 }
 
-uint8_t MX25REraseChip(const MX25R* const dev) {
+uint8_t MX25REnableBurstRead(const MX25R* const dev, const uint8_t wrap_length) {
 
-    #ifdef DEBUG
-    if(dev == NULL || dev->flags.write_enabled == false)
+    #ifdef DEBUG 
+    if(wrap_length > 3)
         return 0;
     #endif
 
-    dev->hal.select_chip(true);
-    uint8_t res = MX25RWriteCommand(dev, MX25R_CHIP_ERASE, NULL, 0);
-    dev->hal.select_chip(false);
-
-
-    return res;
+    return MX25RExecComplexCommand(dev, MX25R_SET_BURST_LEN, &wrap_length, 1);
 
 }
 
-uint8_t MX25RDeepSleep(const MX25R* const dev) {
+uint8_t MX25RDisableBurstRead(const MX25R* const dev) {
 
-    #ifdef DEBUG
-    if(dev == NULL)
-        return 0;
-    #endif
-
-    dev->hal.select_chip(true);
-    uint8_t res = MX25RWriteCommand(dev, MX25R_DEEP_SLEEP, NULL, 0);
-    dev->hal.select_chip(false);
-    
-    return res;
+    const static uint8_t burst_disable = 0x10;
+    return MX25RExecComplexCommand(dev, MX25R_SET_BURST_LEN, &burst_disable, 1);
 
 }
+
+uint8_t MX25REraseChip(const MX25R* const dev) { return MX25RExecEraseCommand(dev, MX25R_FLASH_ERASE, NULL, 0); }
+
+uint8_t MX25RDeepSleep(const MX25R* const dev) { return MX25RExecSimpleCommand(dev, MX25R_DEEP_SLEEP); }
 
 uint8_t MX25REnableWriting(MX25R* const dev)  {
 
-    dev->hal.select_chip(true);
-    uint8_t ret = MX25RWriteCommand(dev, MX25R_WRITE_EN, NULL, 0);
-    dev->hal.select_chip(false);
-
-    dev->flags.write_enabled = true;
-    return ret;
+    dev->is_write_en = true;
+    return MX25RExecSimpleCommand(dev, MX25R_WRITE_EN);
 }
 
 uint8_t MX25RDisableWriting(MX25R* const dev)  {
 
-    dev->hal.select_chip(true);
-    uint8_t ret = MX25RWriteCommand(dev, MX25R_WRITE_DIS, NULL, 0);
-    dev->hal.select_chip(false);
-
-    dev->flags.write_enabled = false;
-    return ret;
+    dev->is_write_en = false;
+    return MX25RExecSimpleCommand(dev, MX25R_WRITE_DIS);
 }
 
-bool MX25RIsWritingEnabled(const MX25R* const dev) { return dev->flags.write_enabled; }
+bool MX25RIsWritingEnabled(const MX25R* const dev) { return dev->is_write_en; }
 
 bool MX25RIsWriteInProgress(MX25R* const dev) {
     
@@ -359,4 +357,27 @@ bool MX25RVerifyProgram(const MX25R* const dev) {
 
 }
 
-uint8_t MX25RSetBurstLength(const MX25R* const dev);
+uint8_t MX25RReset(MX25R* const dev) { 
+
+    dev->is_write_en = false;   
+    return MX25RExecSimpleCommand(dev, MX25R_RESET_EN) && MX25RExecSimpleCommand(dev, MX25R_RESET); 
+    
+}
+
+bool MX25RIsOTPRegionLocked(const MX25R* const dev) { 
+    
+    MX25RSecurityReg reg = {0};
+    MX25RReadSecurityReg(dev, &reg);
+    return reg.otp_sector1_locked && reg.otp_sector2_locked;
+    
+}
+
+uint8_t MX25REnterOTPRegion(const MX25R* const dev) { return MX25RExecSimpleCommand(dev, MX25R_ENTER_OTP); }
+
+uint8_t MX25RExitOTPRegion(const MX25R* const dev)  { return MX25RExecSimpleCommand(dev, MX25R_EXIT_OTP); }
+
+
+
+uint8_t MX25RSuspend(const MX25R* const dev) { return MX25RExecSimpleCommand(dev, MX25R_SUSPEND); }
+
+uint8_t MX25RResume(const MX25R* const dev) { return MX25RExecSimpleCommand(dev, MX25R_RESUME); }

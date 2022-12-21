@@ -39,7 +39,7 @@ static uint8_t MX25RExecWritingCommand(const MX25R* const dev, const MX25RComman
 
     dev->hal.select_chip(true);
 
-    uint8_t ret = MX25RExecComplexCommand(dev, command, args, args_size);
+    uint8_t ret = MX25RWriteCommand(dev, command, args, args_size);
     
     if(ret)
         dev->hal.spi_write(buffer, size);
@@ -70,7 +70,7 @@ static uint8_t MX25RExecReadingCommand(const MX25R* const dev, const MX25RComman
 
     dev->hal.select_chip(true);
 
-    uint8_t ret = MX25RExecComplexCommand(dev, cmd, args, args_size);
+    uint8_t ret = MX25RWriteCommand(dev, cmd, args, args_size);
     
     if(ret)
         dev->hal.spi_read(out, size);
@@ -375,8 +375,6 @@ bool MX25RIsOTPRegionLocked(const MX25R* const dev) {
 uint8_t MX25REnterOTPRegion(const MX25R* const dev) { return MX25RExecSimpleCommand(dev, MX25R_ENTER_OTP); }
 
 uint8_t MX25RExitOTPRegion(const MX25R* const dev)  { return MX25RExecSimpleCommand(dev, MX25R_EXIT_OTP); }
-
-
 
 uint8_t MX25RSuspend(const MX25R* const dev) { return MX25RExecSimpleCommand(dev, MX25R_SUSPEND); }
 

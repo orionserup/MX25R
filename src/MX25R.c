@@ -225,9 +225,9 @@ uint8_t MX25RReadID(const MX25R* const dev, MX25RID* const id) {
 
     const uint8_t dummy_bytes[] = { 0x00, 0x00, 0x00 };
     
-    uint8_t ret = MX25RExecReadCommand(dev, MX25R_READ_ID, NULL, 0, &id->id, 3);
-    ret *= MX25RExecuteReadCommand(dev, MX25R_READ_ESIG, dummy_bytes, 3, &id->electronic_sig, 1);
-    ret *= MX25RExecuteReadCommand(dev, MX25R_READ_EMID, dummy_bytes, 3, &id->em_id, 2);
+    uint8_t ret = MX25RExecReadingCommand(dev, MX25R_READ_ID, NULL, 0, &id->id, 3);
+    ret *= MX25RExecReadingCommand(dev, MX25R_READ_ESIG, dummy_bytes, 3, &id->electronic_sig, 1);
+    ret *= MX25RExecReadingCommand(dev, MX25R_READ_EMID, dummy_bytes, 3, &id->em_id, 2);
 
     return ret;
 

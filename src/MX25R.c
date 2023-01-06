@@ -340,7 +340,7 @@ uint8_t MX25REnableBurstRead(const MX25R* const dev, const uint8_t wrap_length) 
 
 uint8_t MX25RDisableBurstRead(const MX25R* const dev) {
 
-    const static uint8_t burst_disable = 0x10;
+    static const uint8_t burst_disable = 0x10;
     return MX25RExecComplexCommand(dev, MX25R_SET_BURST_LEN, &burst_disable, 1);
 
 }

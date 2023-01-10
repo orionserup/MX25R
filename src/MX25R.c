@@ -9,7 +9,7 @@
  *
  */
 
-#include "MX25R.h"
+#include "../include/MX25R.h"
 
 #include <string.h>
 
@@ -149,23 +149,23 @@ MX25R* MX25RInit(MX25R *const dev, const MX25RHAL* const hal, const bool low_pow
 #else
 MX25R* MX25RInit(MX25R *const dev, const MX25RHAL* const hal, const bool low_power, const uint8_t size_in_mb) {
 
-    if(hal == NULL || dev == NULL)
+
+        
+    dev->size_in_mb = size_in_mb;
+
+#endif   
+
+     if(hal == NULL || dev == NULL)
         return NULL;
 
     if(hal->select_chip == NULL || hal->spi_read == NULL || hal->spi_write == NULL)
         return NULL;
-        
-    dev->size_in_mb = size_in_mb;
-
-#endif
 
     dev->hal = *hal;
     dev->is_write_en = false;
 
-    const uint8_t status_config[] = {0x0, 0x0, low_power ? 0x0 : 0x02};
-    uint8_t res = MX25RExecComplexCommand(dev, MX25R_WRITE_STAT_REG, status_config, 3);
-    
-    return res? dev: NULL;
+    return dev;
+
 }
 
 void MX25RDeinit(MX25R* const dev) {
@@ -201,15 +201,15 @@ uint8_t MX25RReadStatus(MX25R* const dev, MX25RStatus* const status) {
         return 0;
     #endif
 
-    uint8_t raw_status = 0;
+    uint8_t raw_status[] = {0, 0};
 
-    uint8_t ret = MX25RExecReadingCommand(dev, MX25R_READ_STAT_REG, NULL, 0, &raw_status, 1);
+    uint8_t ret = MX25RExecReadingCommand(dev, MX25R_READ_STAT_REG, NULL, 0, raw_status, 1);
 
-    status->write_in_progress = raw_status & (1 << 0);
-    status->block_protection_level = (raw_status >> 2) & 0xf;
-    status->write_enabled =  raw_status & (1 << 1);
-    status->status_register_write_protected = raw_status & (1 << 7);
-    status->quad_mode_enable = raw_status & (1 << 2);
+    status->write_in_progress = raw_status[0] & (1 << 0);
+    status->block_protection_level = (raw_status[0] >> 2) & 0xf;
+    status->write_enabled =  raw_status[0] & (1 << 1);
+    status->status_register_write_protected = raw_status[0] & (1 << 7);
+    status->quad_mode_enable = raw_status[0] & (1 << 2);
 
     dev->is_write_en = status->write_enabled;
 
@@ -268,6 +268,18 @@ uint8_t MX25RReadSecurityReg(const MX25R* const dev, MX25RSecurityReg* const reg
 
 }
 
+uint8_t MX25RReadConfig(MX25R* const dev, MX25RConfig* const config) {
+
+    uint8_t buffer[2];
+    uint8_t res = MX25RExecReadingCommand(dev, MX25R_READ_CONFIG_REG, NULL, 0, buffer, 2);
+    
+    config->dummy_cycle = buffer[0] & (1 << 6);
+    config->top_bottom = buffer[0] & (1 << 3); 
+    config->low_power_mode = !buffer[1] & (1 << 1);
+
+    return res;
+}
+
 uint8_t MX25RWriteSecurityReg(const MX25R* const dev, bool lockdown_otp_sector1) {
 
     uint8_t res = 1;
@@ -275,6 +287,17 @@ uint8_t MX25RWriteSecurityReg(const MX25R* const dev, bool lockdown_otp_sector1)
         res = MX25RExecSimpleCommand(dev, MX25R_WRITE_SEC_REG);
     
     return res;
+}
+
+uint8_t MX25RWriteStatusConfigReg(const MX25R* const dev, const MX25RStatus* const status, const MX25RConfig* const config) {
+
+    uint8_t status_config[3] = { 
+        status->write_in_progress | (status->write_enabled << 1) | (status->block_protection_level << 2) | (status->quad_mode_enable << 6) | (status->status_register_write_protected),
+        (config->dummy_cycle << 6) | (config->top_bottom << 3),
+        ((!config->low_power_mode) << 1)
+    };
+
+    return MX25RExecComplexCommand(dev, MX25R_WRITE_STAT_REG, status_config, 3);
 }
 
 uint8_t MX25RPageProgram(const MX25R* const dev, const uint16_t page, const uint8_t *const data, const uint8_t size) {
@@ -348,6 +371,20 @@ uint8_t MX25RDisableBurstRead(const MX25R* const dev) {
 uint8_t MX25REraseChip(const MX25R* const dev) { return MX25RExecEraseCommand(dev, MX25R_FLASH_ERASE, NULL, 0); }
 
 uint8_t MX25RDeepSleep(const MX25R* const dev) { return MX25RExecSimpleCommand(dev, MX25R_DEEP_SLEEP); }
+
+uint8_t MX25RSetLowPowerMode(const MX25R* const dev, const bool enabled)  {
+
+    MX25RStatus stat;
+    MX25RConfig config;
+
+    MX25RReadStatus(dev, &stat);
+    MX25RReadConfig(dev, &config);
+
+    config.low_power_mode = !enabled;
+
+    return MX25RWriteStatusConfigReg(dev, &stat, &config);
+
+}
 
 uint8_t MX25REnableWriting(MX25R* const dev)  {
 

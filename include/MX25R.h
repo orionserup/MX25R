@@ -76,13 +76,22 @@ typedef struct MX25RSECURITYREG {
 /// @brief Represents the status of the base operations
 typedef struct MX25RSSTATUS {
 
-    bool status_register_write_protected;   ///< If this register can be written to
-    bool quad_mode_enable;                  ///< If Quad Channel I/O is Enabled
-    uint8_t block_protection_level;         ///< How many blocks are set to be protected via block protection (2 ^ value) either from the top or from the bottom (default top)
-    bool write_enabled;                     ///< If we are allowed to write to flash
-    bool write_in_progress;                 ///< If there is a current program or erase operation in progress
+    bool status_register_write_protected : 1;   ///< If this register can be written to
+    bool quad_mode_enable : 1;                  ///< If Quad Channel I/O is Enabled
+    uint8_t block_protection_level : 4;         ///< How many blocks are set to be protected via block protection (2 ^ value) either from the top or from the bottom (default top)
+    bool write_enabled : 1;                     ///< If we are allowed to write to flash
+    bool write_in_progress : 1;                 ///< If there is a current program or erase operation in progress
 
 } MX25RStatus;
+
+/// @brief Device configration data
+typedef struct MX25RCONFIG {
+
+    bool dummy_cycle : 1;       ///< If we want to use a dummy cycle for dual and quad i/o
+    bool top_bottom: 1;         ///< If the top or the bottom of the flash is protected by default  
+    bool low_power_mode : 1;    ///< If the device is in low power mode 
+
+} MX25RConfig;
 
 #pragma pack(push, 1)
 
@@ -199,6 +208,15 @@ uint8_t MX25RFastRead(const MX25R* const dev, const uint32_t address, uint8_t* c
 uint8_t MX25RReadStatus(MX25R* const dev, MX25RStatus* const status);
 
 /**
+ * @brief Reads the Device configuration register
+ * 
+ * @param[in] dev: Device to read from 
+ * @param[in] config: Config to read into 
+ * @return[in] uint8_t: Status, 0 if there is an error 
+ */
+uint8_t MX25RReadConfig(MX25R* const dev, MX25RConfig* const config);
+
+/**
  * @brief Reads the security register from the device, contains past state information and if the OTP is writable
  * 
  * @param[in] dev: Device to read from 
@@ -226,6 +244,16 @@ uint8_t MX25RReadID(const MX25R* const dev, MX25RID* const id);
  * @return uint8_t: Command 
  */
 uint8_t MX25RWriteSecurityReg(const MX25R* const dev, bool lockdown_otp_sector1);
+
+/**
+ * @brief Writes the device status and config registers
+ * 
+ * @param[in] dev: Device to write to 
+ * @param[in] status: Status to write 
+ * @param[in] config: Config to write 
+ * @return uint8_t: Status, 0 if there was an error
+ */
+uint8_t MX25RWriteStatusConfig(const MX25R* const dev, const MX25RStatus* const status, const MX25RConfig* const config);
 
 /**
  * @brief Programs a page (256 bytes) with whatever you feed it
@@ -337,6 +365,15 @@ uint8_t MX25RReset(MX25R* const dev);
  * @return uint8_t: Command Execution status, 0 if there is an error 
  */
 uint8_t MX25RDeepSleep(const MX25R* const dev);
+
+/**
+ * @brief Sets the device into low power mode if requested
+ * 
+ * @param[in] dev: Device to set the setting on 
+ * @param[in] enabled: If we are gonna use low power mode 
+ * @return uint8_t: Status, 0 if there was an error 
+ */
+uint8_t MX25RSetLowPowerMode(const MX25R* const dev, const bool enabled);
 
 /**
  * @brief Pauses any pending programs or erases, check the Security Register to see if you have paused actions after

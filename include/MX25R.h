@@ -84,7 +84,7 @@ typedef struct MX25RSSTATUS {
 
 } MX25RStatus;
 
-/// @brief Device configration data
+/// @brief Device configuration data
 typedef struct MX25RCONFIG {
 
     bool dummy_cycle : 1;       ///< If we want to use a dummy cycle for dual and quad i/o
